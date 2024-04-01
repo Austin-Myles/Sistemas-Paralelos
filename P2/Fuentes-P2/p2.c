@@ -25,6 +25,9 @@ double *A, *B, *C;
 //Dimension por defecto de las matrices
 int N=100;
 
+//Cantidad por defecto de hilos
+int H= MAX_THREADS;
+
 //Para calcular tiempo
 double dwalltime(){
     double sec;
@@ -58,12 +61,11 @@ void *multiplicacion_matriz(void *arg){
 int main(int argc, char* argv[]){
     double timetick;
     int check=1;
-    pthread_t threads[MAX_THREADS];
-    ThreadArgs args[MAX_THREADS];
+
 
     //Controla los argumentos al programa
-    if ((argc != 2) || ((N = atoi(argv[1])) <= 0)){
-        printf("\nUsar: %s n\n  n: Dimension de la matriz (nxn X nxn)\n", argv[0]);
+    if ((argc != 3) || ((N = atoi(argv[1])) <= 0) || ((H = atoi(argv[2])) <= 0) ){
+        printf("\nUsar: %s n h\n  n: Dimension de la matriz (nxn X nxn)\n  h: Cantidad de hilos\n", argv[0]);
         exit(1);
     }
 
@@ -71,6 +73,10 @@ int main(int argc, char* argv[]){
     A = (double*)malloc(sizeof(double)*N*N);
     B = (double*)malloc(sizeof(double)*N*N);
     C = (double*)malloc(sizeof(double)*N*N);
+
+    //Declara los hilos y el vector de argumentos
+    pthread_t threads[H];
+    ThreadArgs args[H];
 
     //Inicializa las matrices A y B en 1, el resultado sera una matriz con todos sus valores en N
     for(int i = 0; i < N*N; i++){
@@ -83,17 +89,17 @@ int main(int argc, char* argv[]){
 
     //Dividimos por bloques la matriz y la designamos a los Threads
 
-    int bloque_size = N / MAX_THREADS;
+    int bloque_size = N / H;
 
-    for(int i = 0; i < MAX_THREADS; i++) {
+    for(int i = 0; i < H; i++) {
         args[i].inicio = i * bloque_size;
-        args[i].fin = (i < MAX_THREADS - 1) ? (i + 1) * bloque_size : N;
+        args[i].fin = (i < H - 1) ? (i + 1) * bloque_size : N;
         args[i].id_hilo = i;
         pthread_create(&threads[i], NULL, multiplicacion_matriz, (void *)&args[i]);
     }
 
     // Esperamos a que los hilos terminen.
-    for(int i = 0; i < MAX_THREADS; i++){
+    for(int i = 0; i < H; i++){
         pthread_join(threads[i], NULL);
 
     }

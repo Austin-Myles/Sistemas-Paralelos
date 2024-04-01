@@ -17,17 +17,20 @@ typedef struct {
     int id_hilo;
 } ThreadArgs;
 
-//Ocurrencias y Vector
+//Maximo, minimo, promedio y Vector
 int *A;
-int ocurrencia = 0;
+int max = 0;
+int min = 10000;
+double avg = 0;
 
-//Dimension por defecto del vector, el numero a encontrar y el numero de hilos
+//Dimension por defecto del vector y el numero de hilos
 int N;
-int X = 0; 
 int H = MAX_THREADS;
 
-//Mutex
+//Definición del semaforo
 pthread_mutex_t mutex;
+pthread_mutex_t mutexMax;
+pthread_mutex_t mutexMin;
 
 //Para calcular tiempo
 double dwalltime(){
@@ -38,9 +41,8 @@ double dwalltime(){
     return sec;
 }
 
-//Moduelo de busqueda
-
-void *buscar_elemento(void *arg){
+//Modulo de calculo
+void *calcular_elementos(void *arg){
     
     ThreadArgs *args = (ThreadArgs *)arg;
     int inicio = args->inicio;
@@ -48,11 +50,19 @@ void *buscar_elemento(void *arg){
     int id_hilo = args->id_hilo;
 
     for(int i = inicio; i < fin; i++){
-        if(A[i] == X ){
-            pthread_mutex_lock(&mutex);
-            ocurrencia++;
-            pthread_mutex_unlock(&mutex);
+        if(A[i] > max){
+            pthread_mutex_lock(&mutexMax);
+            max = A[i];
+            pthread_mutex_unlock(&mutexMax);
         }
+        if(A[i] < min){
+            pthread_mutex_lock(&mutexMin);
+            min = A[i];
+            pthread_mutex_unlock(&mutexMin);
+        }
+        pthread_mutex_lock(&mutex);
+        avg += A[i];
+        pthread_mutex_unlock(&mutex);
     }
     pthread_exit(NULL);
 }
@@ -64,10 +74,12 @@ int main(int argc, char* argv[]){
 
     //Creamos el Mutex
     pthread_mutex_init(&mutex, NULL);
+    pthread_mutex_init(&mutexMax, NULL);
+    pthread_mutex_init(&mutexMin, NULL);
 
     //Controla los argumentos al programa
-    if ((argc != 4) || ((N = atoi(argv[1])) <= 0) || ((X = atoi(argv[2])) < 0) || ((H = atoi(argv[3])) <= 0)) {
-        printf("\nUsar: %s N X H\n N: Tamaño del vector\n X: Elemento a buscar\n H: Cantidad de hilos\n", argv[0]);
+    if ((argc != 3) || ((N = atoi(argv[1])) <= 0) || ((H = atoi(argv[2])) < 0)) {
+        printf("\nUsar: %s N H\n N: Tamaño del vector\n H: Cantidad de hilos\n", argv[0]);
         exit(1);
     }
 
@@ -94,21 +106,25 @@ int main(int argc, char* argv[]){
         args[i].inicio = i * bloque_size;
         args[i].fin = (i < H - 1) ? (i + 1) * bloque_size : N;
         args[i].id_hilo = i;
-        pthread_create(&threads[i], NULL, buscar_elemento, (void *)&args[i]);
+        pthread_create(&threads[i], NULL, calcular_elementos, (void *)&args[i]);
     }
 
     // Esperamos a que los hilos terminen.
     for(int i = 0; i < H; i++){
         pthread_join(threads[i], NULL);
-
     }
 
-    printf("Busqueda de elemento %d en el vector tamaño %d. Tiempo en segundos %f\n", X, N, dwalltime() - timetick);
+    // Calculamos finalmente avg
+    avg = avg / N;
 
-    printf("Cantidad de ocurrencias: %d",ocurrencia);
+    printf("Calculo en el vector tamaño %d. Tiempo en segundos %f\n", N, dwalltime() - timetick);
+
+    printf("Max: %d.\nMin: %d.\nPromedio: %f.\n",max,min,avg);
     printf("\n");
 
     pthread_mutex_destroy(&mutex);
+    pthread_mutex_destroy(&mutexMax);
+    pthread_mutex_destroy(&mutexMin);
     free(A);
     return 0;
 }

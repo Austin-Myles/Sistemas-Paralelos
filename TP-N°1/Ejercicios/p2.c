@@ -54,6 +54,8 @@ int main(int argc,char*argv[]){
             R[i] = 0;
     }
 
+    timetick = dwalltime();
+
     //Obtenemos el max, min y promedio de A y B
     for(int i=0; i<N*N; i++){
         if(A[i] > maxA){
@@ -75,12 +77,12 @@ int main(int argc,char*argv[]){
 
     promA = promA / N*N;
     promB = promB / N*N;
-    
-    timetick = dwalltime();
 
     for(int i=0; i < N; i++){
         for(int j=0; j < N; j++){
-            R[i*N+j] += ((maxA * maxB - minA * minB) / (promA * promB)) * (A[i*N+j] * B[i*N+j]) + (C[i*N+j] * D[i*N+j]);
+            for(int k=0; k < N; k++){
+                R[i*N+j] += ((maxA * maxB - minA * minB) / (promA * promB)) * (A[i*N+k] * B[k + N*j]) + (C[i*N+j] * D[k+N*j]);
+            }
         } 
     }
 

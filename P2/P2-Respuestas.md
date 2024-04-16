@@ -1,4 +1,4 @@
-# Práctica Nro. 1
+# Práctica Nro. 2
 
 _Optimización de algoritmos secuenciales_ 
 

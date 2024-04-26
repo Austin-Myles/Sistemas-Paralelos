@@ -45,7 +45,7 @@ int main(int argc,char*argv[]){
     { 
         tid= omp_get_thread_num();
         timetick = dwalltime();
-        #pragma omp for private(i,j,temp)  //LE SAQUE EL NOWAIT...
+        #pragma omp for schedule(dynamic,2) nowait  //Se agrego un Scheduler Dinamico con un Chunk de 2.
         for(i=0;i<N;i++){
             for(j=i+1;j<N;j++){
                 temp = A[i*N+j];

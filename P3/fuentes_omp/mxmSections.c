@@ -55,14 +55,8 @@ int main(int argc, char* argv[]) {
                     }
                 }   
             }
-        }
 
-    }
-
-    #pragma omp parallel
-    {
-        #pragma omp sections nowait
-        {
+            // Sección 2: Multiplicación E = C x B
             #pragma omp section
             {
                 for(i=0;i<N;i++){
@@ -75,7 +69,7 @@ int main(int argc, char* argv[]) {
                 } 
             }
         }
-        // Sección 2: Multiplicación E = C x B
+        
 
     }
 

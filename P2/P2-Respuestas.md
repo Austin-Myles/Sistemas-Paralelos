@@ -12,7 +12,6 @@ _Optimización de algoritmos secuenciales_
     - 
 
 2. Desarrolle  un  algoritmo  paralelo  que  compute  la  multiplicación  de  matrices  cuadradas  de  NxN.  Primero, considere  a  la  versión  optimizada  del  ejercicio  8  de  la  práctica  anterior  como  algoritmo  base.  Luego, paralelice la versión que computa por bloques. Mida el tiempo de ejecución para N={512, 1024, 2048, 4096} y T={2,4,8}. Analice el rendimiento. 
-    -  
+
 
 3. Desarrolle un algoritmo paralelo que cuente la cantidad de veces que un elemento X aparece dentro de un vector de N elementos enteros.  Al finalizar, la cantidad de ocurrencias del elemento X debe quedar en una variable llamada ocurrencias. Para la sincronización emplee mutex-locks. Pruebe con diversos tamaños de N y T={2,4,8}. Analice el rendimiento.
-    -

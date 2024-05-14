@@ -28,6 +28,9 @@ void *suma_vectores_hilo(void *args) {
     pthread_exit(NULL);
 }
 
+//Tiempo en segundos desde un momento pasado
+double dwalltime();
+
 int main(int argc,char*argv[]){
     int i,j,k,N,T;
 
@@ -59,6 +62,9 @@ int main(int argc,char*argv[]){
     int inicio = 0;
     int fin;
 
+    timetick = dwalltime();
+
+
     for (i = 0; i < T; i++) {
         fin = (i < T - 1) ? inicio + bloque_size : N;
         args[i].inicio = inicio;
@@ -75,6 +81,8 @@ int main(int argc,char*argv[]){
     for (i = 0; i < T; i++) {
         pthread_join(threads[i], NULL);
 	}
+    double time = dwalltime() - timetick;
+    printf("Suma con dimensión N = %d y Threads = %d. Tiempo en segundos %f\n",N,T,time);
 
     //Verifica el resultado
     for (int i = 0; i < N; i++) {
@@ -87,5 +95,18 @@ int main(int argc,char*argv[]){
         }
     }
     return 0;
+}
+
+#include <stdio.h>
+#include <sys/time.h>
+
+double dwalltime()
+{
+	double sec;
+	struct timeval tv;
+
+	gettimeofday(&tv,NULL);
+	sec = tv.tv_sec + tv.tv_usec/1000000.0;
+	return sec;
 }
 

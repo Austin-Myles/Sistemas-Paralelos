@@ -58,22 +58,16 @@ int main(int argc, char* argv[]){
 	commTimes[0] = MPI_Wtime();
 
 	/* distribuir datos*/
-	if (rank==COORDINATOR){
+	// vamos a usar un scatter sujeto a cambios
 	
-		for (i=1; i<numProcs; i++) {
-			MPI_Send(a+i*stripSize*n, stripSize*n, MPI_DOUBLE, i, 0, MPI_COMM_WORLD);
-			MPI_Send(b, n*n, MPI_DOUBLE, i, 1, MPI_COMM_WORLD);
-		}
-	} else {
-		MPI_Recv(a, stripSize*n, MPI_DOUBLE, COORDINATOR, 0, MPI_COMM_WORLD, &status);
-		MPI_Recv(b, n*n, MPI_DOUBLE, COORDINATOR, 1, MPI_COMM_WORLD, &status);
-	}
+	MPI_Scatter(a, stripSize * n, MPI_DOUBLE, a, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+    MPI_Bcast(b, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
 	commTimes[1] = MPI_Wtime();
 
 	/* computar multiplicacion parcial */
 	for (i=0; i<stripSize; i++) {
-		for (j=0; j<n ;j++ ) {
+		for (j=0; j<n ;j++) {
 			c[i*n+j]=0;
 			for (k=0; k<n ;k++ ) { 
 				c[i*n+j] += (a[i*n+k]*b[j*n+k]); 
@@ -85,12 +79,9 @@ int main(int argc, char* argv[]){
 	commTimes[2] = MPI_Wtime();
 
 	// recolectar resultados parciales
-	if (rank==COORDINATOR){
-		for (i=1; i<numProcs; i++) {
-			MPI_Recv(c+i*stripSize*n, n*stripSize, MPI_DOUBLE, i, 2, MPI_COMM_WORLD, &status);			
-		}
-	} else
-		MPI_Send(c, n*stripSize, MPI_DOUBLE, COORDINATOR, 2, MPI_COMM_WORLD);
+	// vamos a usar un gather.
+	MPI_Gather(c, stripSize * n, MPI_DOUBLE, c, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+
 
 	commTimes[3] = MPI_Wtime();
 

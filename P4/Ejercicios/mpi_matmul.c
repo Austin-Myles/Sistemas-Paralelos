@@ -10,7 +10,7 @@ int main(int argc, char* argv[]){
 	MPI_Status status;
 	double commTimes[4], maxCommTimes[4], minCommTimes[4], commTime, totalTime;
 
-	/* Lee parï¿½metros de la lï¿½nea de comando */
+	/* Lee parámetros de la línea de comando */
 	if ((argc != 2) || ((n = atoi(argv[1])) <= 0) ) {
 	    printf("\nUsar: %s size \n  size: Dimension de la matriz y el vector\n", argv[0]);
 		exit(1);
@@ -22,7 +22,7 @@ int main(int argc, char* argv[]){
 	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
 	if (n % numProcs != 0) {
-		printf("El tamaï¿½o de la matriz debe ser multiplo del numero de procesos.\n");
+		printf("El tamaño de la matriz debe ser multiplo del numero de procesos.\n");
 		exit(1);
 	}
 

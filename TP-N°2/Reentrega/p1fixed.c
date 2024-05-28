@@ -149,9 +149,9 @@ int main(int argc,char*argv[]){
     free(AxB);
     free(CxD);
     return(0);
-     
+} 
 /*****************************************************************/
-}
+
 #include <stdio.h>
 #include <sys/time.h>
 

@@ -113,6 +113,7 @@ void *multiply_thread(void *arg)
             auxJ = j * N;
             for(k=0; k < N; k+=bs){
                 for (i2 = 0; i2 < bs; i2++){
+                    auxI2 = i2 * N;
                     for (j2 = 0; j2 < bs; j2++){
                         auxJ2 = j2 * N;
                         for (k2 = 0; k2 < bs; k2++){
@@ -125,13 +126,14 @@ void *multiply_thread(void *arg)
             auxJ = j * N;
             for(k=0; k < N; k+=bs){
                 for (i2 = 0; i2 < bs; i2++){
+                    auxI2 = i2 * N;
                     for (j2 = 0; j2 < bs; j2++){
                         auxJ2 = j2 * N;
                         for (k2 = 0; k2 < bs; k2++){
                             CxD[auxI + j + auxI2 + j2] += C[auxI + k + auxI2 + k2] * D[auxJ + k + auxJ2 + k2];
     }}}}}}
 
-    //Cada proceso realiza la operación por bloques de la matriz R
+    //Cada proceso realiza la operaci�n por bloques de la matriz R
 
     for(i=inicio ; i < fin; i++){
         auxI = i * N;
@@ -142,7 +144,6 @@ void *multiply_thread(void *arg)
 
     pthread_exit(NULL);  
 }
-
 
 int main(int argc,char*argv[]){
 

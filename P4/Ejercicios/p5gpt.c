@@ -43,11 +43,9 @@ int main(int argc, char* argv[]) {
     // Reservar memoria
     if (rank == COORDINATOR) {
         a = (double*) malloc(sizeof(double) * n * n);
-        b = (double*) malloc(sizeof(double) * n * n);
         c = (double*) malloc(sizeof(double) * n * n);
-        d = (double*) malloc(sizeof(double) * n * n);
         e = (double*) malloc(sizeof(double) * n * n);
-        f = (double*) malloc(sizeof(double) * n * n);
+        
         r = (double*) malloc(sizeof(double) * n * n);
         ab = (double*) malloc(sizeof(double) * n * n);
         cd = (double*) malloc(sizeof(double) * n * n);
@@ -62,6 +60,10 @@ int main(int argc, char* argv[]) {
         r = (double*) malloc(sizeof(double) * n * stripSize);
     }
     
+    b = (double*) malloc(sizeof(double) * n * n);
+    d = (double*) malloc(sizeof(double) * n * n);
+    f = (double*) malloc(sizeof(double) * n * n);
+
     if (rank == COORDINATOR) {
         for (i = 0; i < n; i++) {
             for (j = 0; j < n; j++) {
@@ -111,7 +113,7 @@ int main(int argc, char* argv[]) {
         // Check results
         for (i = 0; i < n; i++) {
             for (j = 0; j < n; j++) {
-                check = check && (r[i * n + j] == 3);
+                check = check && (r[i * n + j] == 3*n);
             }
         }
 

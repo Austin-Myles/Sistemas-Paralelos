@@ -38,9 +38,6 @@ int main(int argc, char* argv[]){
 		a = (double*) malloc(sizeof(double)*n*n);
 		c = (double*) malloc(sizeof(double)*n*n);
         e = (double*) malloc(sizeof(double)*n*n);
-	    b = (double*) malloc(sizeof(double)*n*n);
-        d = (double*) malloc(sizeof(double)*n*n);
-        f = (double*) malloc(sizeof(double)*n*n);
         ab = (double*) malloc(sizeof(double)*n*n);
         cd = (double*) malloc(sizeof(double)*n*n);
         ef = (double*) malloc(sizeof(double)*n*n);
@@ -56,6 +53,9 @@ int main(int argc, char* argv[]){
         r = (double*) malloc(sizeof(double)*n*stripSize);
 	}
 
+	b = (double*) malloc(sizeof(double)*n*n);
+	d = (double*) malloc(sizeof(double)*n*n);
+	f = (double*) malloc(sizeof(double)*n*n);
 
     if (rank == COORDINATOR) {
         for (i = 0; i < n; i++) {
@@ -72,7 +72,6 @@ int main(int argc, char* argv[]){
     }
 
 	MPI_Barrier(MPI_COMM_WORLD);
-
 	//Primero distribuimos para A*B;
 	
 	MPI_Scatter(a, stripSize * n, MPI_DOUBLE, a, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
@@ -88,7 +87,6 @@ int main(int argc, char* argv[]){
 			}
 		}
 	}
-	// vamos a usar un gather.
 	MPI_Gather(ab, stripSize * n, MPI_DOUBLE, ab, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
     //Segundo distribuimos para C*D;
@@ -106,7 +104,6 @@ int main(int argc, char* argv[]){
 			}
 		}
 	}
-	// vamos a usar un gather.
 	MPI_Gather(cd, stripSize * n, MPI_DOUBLE, cd, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
     //Segundo distribuimos para E*F;
@@ -124,9 +121,9 @@ int main(int argc, char* argv[]){
 			}
 		}
 	}
-	// vamos a usar un gather.
 	MPI_Gather(ef, stripSize * n, MPI_DOUBLE, ef, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
+	MPI_Scatter(r, stripSize * n, MPI_DOUBLE, r, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
     //Sumamos los resultados
     for (i=0; i<stripSize ; i++) {
@@ -135,6 +132,7 @@ int main(int argc, char* argv[]){
         }
     }
 
+	MPI_Gather(r, stripSize * n, MPI_DOUBLE, r, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     //////////////////////////////////////////////////////////////////////////////////////////////////////
 
 

@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <mpi.h>
+#include <omp.h>
 
 #define COORDINATOR 0
 
 void matrix_mul(double *a, double *b, double *ab, int n, int stripSize) {
     int i, j, k, auxi;
-
+    #pragma opm parallel for num_threads(threads) reduction(+:auxi) shared(ab,a,b) private(i,j,k,auxi) schedule(static)
     for (i = 0; i < stripSize; i++) {
         auxi = i * n;
         for (j = 0; j < n; j++) {
@@ -25,8 +26,8 @@ E y F son matrices cuadradas de NxN. Ejecute para N = {512, 1024, 2048} con P={2
 int main(int argc, char* argv[]){
     
 	double commTimes[2], maxCommTimes[2], minCommTimes[2], commTime, totalTime;
-	int i, j, k, numProcs, rank, n, stripSize;
-    int auxi, auxj;
+	int i, j, k, numProcs, rank, n, stripSize, threads, provided;
+    int auxi;
 	double *A,*B,*C,*D,*AxB,*CxD,*R;   
     double maxA = -1;
     double maxB = -1;
@@ -39,12 +40,13 @@ int main(int argc, char* argv[]){
 	MPI_Status status;
 
 	/* Lee par�metros de la l�nea de comando */
-	if ((argc != 2) || ((n = atoi(argv[1])) <= 0) ) {
-	    printf("\nUsar: %s size \n  size: Dimension de la matriz\n", argv[0]);
+	if ((argc != 3) || ((n = atoi(argv[1])) <= 0) ) {
+	    printf("\nUsar: %s size \n  size: Dimension de la matriz\n T: Cant Threads", argv[0]);
 		exit(1);
 	}
+    threads = atoi(argv[2]);
 
-	MPI_Init(&argc,&argv);
+	MPI_Init_thread(&argc,&argv, MPI_THREAD_MULTIPLE, &provided);
 
 	MPI_Comm_size(MPI_COMM_WORLD,&numProcs);
 	MPI_Comm_rank(MPI_COMM_WORLD,&rank);
@@ -109,74 +111,80 @@ int main(int argc, char* argv[]){
 	MPI_Scatter(A, stripSize * n, MPI_DOUBLE, A, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     MPI_Bcast(B, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
-    for(i=0;i<stripSize;i++){
-        auxi = i * n;
-        for(j=0;j<n;j++){
-            if(A[auxi+j]>localMaxA){
-                localMaxA = A[auxi+j];
+    #pragma opm parallel num_threads(threads) shared(A,B,C,D,AxB,CxD) private(i,j,k,auxi)
+    {
+        #pragma omp for schedule(static) reduction(max:localMaxA) reduction(min:localMinA) reduction(+:localPromA)
+        for(i=0;i<stripSize;i++){
+            auxi = i * n;
+            for(j=0;j<n;j++){
+                if(A[auxi+j]>localMaxA){
+                    localMaxA = A[auxi+j];
+                }
+                if(A[auxi+j]<localMinA){
+                    localMinA = A[auxi+j];
+                }
+                localPromA += A[auxi+j];
             }
-            if(A[auxi+j]<localMinA){
-                localMinA = A[auxi+j];
-            }
-            localPromA += A[auxi+j];
         }
-    }
 
-    for(i=0;i<stripSize;i++){
-        auxi = i * n;
-        for(j=0;j<n;j++){
-            if(B[i*n+j]>localMaxB){
-                localMaxB = B[i*n+j];
+        #pragma omp for schedule(static) reduction(max:localMaxB) reduction(min:localMinB) reduction(+:localPromB)
+        for(i=0;i<stripSize;i++){
+            auxi = i * n;
+            for(j=0;j<n;j++){
+                if(B[i*n+j]>localMaxB){
+                    localMaxB = B[i*n+j];
+                }
+                if(B[i*n+j]<localMinB){
+                    localMinB = B[i*n+j];
+                }
+                localPromB += B[i*n+j];
             }
-            if(B[i*n+j]<localMinB){
-                localMinB = B[i*n+j];
+        }
+
+        MPI_Reduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Reduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Reduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Reduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Reduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Reduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        //El coordinador calcula el escalar.
+        #pragma omp master
+        {
+            promA = promA / (n*n);
+            promB = promB / (n*n);
+            T1 = ((maxA * maxB - minA * minB) / (promA * promB));
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        //////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        matrix_mul(A, B, AxB, n, stripSize);
+
+        MPI_Gather(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+
+        //Segundo distribuimos para C*D;
+        
+        MPI_Scatter(C, stripSize * n, MPI_DOUBLE, C, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+        MPI_Bcast(D, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+
+        matrix_mul(C, D, CxD, n, stripSize);
+
+        MPI_Gather(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+
+        //Sumamos los resultados
+        #pragma omp for schedule(static)
+        for (i=0; i<stripSize ; i++) {
+            for (j=0; j<n ;j++) {
+                R[auxi+j] = (AxB[auxi+j] * T1) + CxD[auxi+j];
             }
-            localPromB += B[i*n+j];
         }
+
+        MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     }
-
-    MPI_Reduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Reduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Reduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Reduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Reduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Reduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    //El coordinador calcula el escalar.
-    if(rank == COORDINATOR){
-        promA = promA / (n*n);
-        promB = promB / (n*n);
-        T1 = ((maxA * maxB - minA * minB) / (promA * promB));
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    //////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	matrix_mul(A, B, AxB, n, stripSize);
-
-	MPI_Gather(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-    //Segundo distribuimos para C*D;
-    
-    MPI_Scatter(C, stripSize * n, MPI_DOUBLE, C, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-    MPI_Bcast(D, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-	matrix_mul(C, D, CxD, n, stripSize);
-
-	MPI_Gather(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-    //Sumamos los resultados
-    for (i=0; i<stripSize ; i++) {
-        for (j=0; j<n ;j++) {
-            R[auxi+j] = (AxB[auxi+j] * T1) + CxD[auxi+j];
-        }
-    }
-
-    MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
     //////////////////////////////////////////////////////////////////////////////////////////////////////
     commTimes[1] = MPI_Wtime();
 

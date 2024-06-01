@@ -5,29 +5,13 @@
 
 #define COORDINATOR 0
 
-void matrix_mul(double *a, double *b, double *ab, int n, int stripSize) {
-    int i, j, k, auxi;
-    #pragma opm parallel for num_threads(threads) reduction(+:auxi) shared(ab,a,b) private(i,j,k,auxi) schedule(static)
-    for (i = 0; i < stripSize; i++) {
-        auxi = i * n;
-        for (j = 0; j < n; j++) {
-            ab[auxi + j] = 0;
-            for (k = 0; k < n; k++) {
-                ab[auxi + j] += a[auxi + k] * b[k * n + j];
-            }
-        }
-    }
-}
-
-/*Desarrolle un algoritmo paralelo que resuelva la expresión R = AB + CD + EF, donde A, B, C, D , 
-E y F son matrices cuadradas de NxN. Ejecute para N = {512, 1024, 2048} con P={2,4,8,16}. 
- */
+void matrix_blk(double *a, double *b, double *ab, int n, int block_size);
 
 int main(int argc, char* argv[]){
     
 	double commTimes[2], maxCommTimes[2], minCommTimes[2], commTime, totalTime;
-	int i, j, k, numProcs, rank, n, stripSize, threads, provided;
-    int auxi;
+	int i,j,k, numProcs, rank, n, fila, col, stripSize, provided;
+    int auxi, auxj;
 	double *A,*B,*C,*D,*AxB,*CxD,*R;   
     double maxA = -1;
     double maxB = -1;
@@ -40,12 +24,12 @@ int main(int argc, char* argv[]){
 	MPI_Status status;
 
 	/* Lee par�metros de la l�nea de comando */
-	if ((argc != 3) || ((n = atoi(argv[1])) <= 0) ) {
-	    printf("\nUsar: %s size \n  size: Dimension de la matriz\n T: Cant Threads", argv[0]);
+	if ((argc != 4) || ((n = atoi(argv[1])) <= 0) ) {
+	    printf("\nUsar: %s size \n  size: Dimension de la matriz\nbs: Tamaño de bloque\nCantidad de hilos\n", argv[0]);
 		exit(1);
 	}
-    threads = atoi(argv[2]);
 
+    //Inicializamos MPI
 	MPI_Init_thread(&argc,&argv, MPI_THREAD_MULTIPLE, &provided);
 
 	MPI_Comm_size(MPI_COMM_WORLD,&numProcs);
@@ -55,6 +39,9 @@ int main(int argc, char* argv[]){
 		printf("El tama�o de la matriz debe ser multiplo del numero de procesos.\n");
 		exit(1);
 	}
+    
+    int block_size = atoi(argv[2]);
+    int cant_hilos = atoi(argv[3]);
 
     //Creamos las variables locales
     double localMaxA = -1;
@@ -64,11 +51,10 @@ int main(int argc, char* argv[]){
     double localPromA = 0;
     double localPromB = 0;
 
-
 	//Calculamos la porcion de cada worker
 	stripSize = n / numProcs;
 
-	// Reservar memoria
+	// Alocamos las matrices
 	if (rank == COORDINATOR) {
         A=(double*)malloc(sizeof(double)*n*n);
         C=(double*)malloc(sizeof(double)*n*n);
@@ -83,10 +69,10 @@ int main(int argc, char* argv[]){
         AxB = (double*) malloc(sizeof(double)*n*stripSize);
         CxD = (double*) malloc(sizeof(double)*n*stripSize);
 	}
-    
     B=(double*)malloc(sizeof(double)*n*n);
     D=(double*)malloc(sizeof(double)*n*n);
 
+    //Inicializamos las matrices.
     if (rank == COORDINATOR) {
         for (i = 0; i < n; i++) {
             auxi = i * n;
@@ -106,13 +92,16 @@ int main(int argc, char* argv[]){
 
     commTimes[0] = MPI_Wtime();
 
-	//Primero distribuimos para A y B para calcular Max, Min y Promedio;
+	//Distribuimos A y C en porciones para los procesos. B y D en su totalidad a todos los procesos.
 	
 	MPI_Scatter(A, stripSize * n, MPI_DOUBLE, A, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     MPI_Bcast(B, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+    MPI_Scatter(C, stripSize * n, MPI_DOUBLE, C, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+    MPI_Bcast(D, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
 
-    #pragma opm parallel num_threads(threads) shared(A,B,C,D,AxB,CxD) private(i,j,k,auxi)
+    #pragma omp parallel private(i,j,k,auxi,auxj,fila,col) num_threads(cant_hilos) shared(A,B,C,D,AxB,CxD,R,stripSize,n,block_size)
     {
+        //Calculamos el maximo, minimo y promedio de A.
         #pragma omp for schedule(static) reduction(max:localMaxA) reduction(min:localMinA) reduction(+:localPromA)
         for(i=0;i<stripSize;i++){
             auxi = i * n;
@@ -127,6 +116,7 @@ int main(int argc, char* argv[]){
             }
         }
 
+        //Calculamos el maximo, minimo y promedio de B.
         #pragma omp for schedule(static) reduction(max:localMaxB) reduction(min:localMinB) reduction(+:localPromB)
         for(i=0;i<stripSize;i++){
             auxi = i * n;
@@ -140,67 +130,118 @@ int main(int argc, char* argv[]){
                 localPromB += B[i*n+j];
             }
         }
-
-        MPI_Reduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Reduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Reduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Reduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Reduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Reduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-
+    
+        #pragma omp barrier
+        //Hacemos las reducciones correspondientes.
+        #pragma omp master
+        {
+            MPI_Reduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Reduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Reduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Reduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Reduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Reduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
+        }
+        //Punto de sincronización.
         MPI_Barrier(MPI_COMM_WORLD);
 
-        //El coordinador calcula el escalar.
+        //Calculamos el escalar.
         #pragma omp master
         {
             promA = promA / (n*n);
-            promB = promB / (n*n);
+            promB = promB / (n*n);    
             T1 = ((maxA * maxB - minA * minB) / (promA * promB));
         }
 
+        //Punto de sincronización.
         MPI_Barrier(MPI_COMM_WORLD);
 
-        //////////////////////////////////////////////////////////////////////////////////////////////////////
-
-        matrix_mul(A, B, AxB, n, stripSize);
-
-        MPI_Gather(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-        //Segundo distribuimos para C*D;
-        
-        MPI_Scatter(C, stripSize * n, MPI_DOUBLE, C, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-        MPI_Bcast(D, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-        matrix_mul(C, D, CxD, n, stripSize);
-
-        MPI_Gather(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-
-        //Sumamos los resultados
-        #pragma omp for schedule(static)
-        for (i=0; i<stripSize ; i++) {
-            for (j=0; j<n ;j++) {
-                R[auxi+j] = (AxB[auxi+j] * T1) + CxD[auxi+j];
+        //Hacemos las multiplicaciones de matrices por bloques A y B
+        #pragma omp for schedule(static) nowait
+        for(i = 0; i < stripSize; i += block_size){
+            fila = i * n;
+            for(j = 0; j < n; j += block_size){
+                col = j * n;
+                for(k = 0; k < n; k += block_size){
+                    matrix_blk(&A[fila + k], &B[col + k], &AxB[fila + j], n, block_size);
+                }
             }
         }
 
-        MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-    }
-    //////////////////////////////////////////////////////////////////////////////////////////////////////
-    commTimes[1] = MPI_Wtime();
+        //Hacemos las multiplicaciones de matrices por bloques C y D
+        #pragma omp for schedule(static) nowait
+        for(i = 0; i < stripSize; i += block_size){
+            fila = i * n;
+            for(j = 0; j < n; j += block_size){
+                col = j * n;
+                for(k = 0; k < n; k += block_size){
+                    matrix_blk(&A[fila + k], &B[col + k], &AxB[fila + j], n, block_size);
+                }
+            }
+        }
 
+        #pragma omp master
+        {
+            MPI_Gather(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Gather(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Scatter(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+            MPI_Scatter(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+        }
+ 
+
+        //Calculamos el resultado total
+        #pragma omp for schedule(static)
+        for (i=0; i<stripSize ; i++) {
+            for (j=0; j<n ;j++) {
+                R[auxi+j] += (AxB[auxi+j] * T1) + CxD[auxi+j];
+            }
+        }
+        
+        #pragma omp master
+        {
+            MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+        }
+    }
+    //Obtenemos el tiempo total.
+    commTimes[1] = MPI_Wtime();
 	MPI_Reduce(commTimes, minCommTimes, 2, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
 	MPI_Reduce(commTimes, maxCommTimes, 2, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-
 
 	MPI_Finalize();
 
 	if (rank == COORDINATOR) {
-
+        //Calculamos el tiempo total que tomo el algoritmo.
         totalTime = maxCommTimes[1] - minCommTimes[0];
         printf("Multiplicacion de matrices (N=%d)\tCantidad de procesos (P=%d)\tTiempo total=%lf\n",n,numProcs,totalTime);
-
+        
 	}
 
+    //Liberamos memoria
+    free(A);
+    free(B);
+    free(C);
+    free(D);
+    free(R);
+    free(AxB);
+    free(CxD);
 
 	return 0;
 }
+    //Procemiento encargado de realizar la multiplicacion por bloques
+    void matrix_blk(double *a, double *b, double *ab, int n, int block_size) 
+    {
+        int i, j, k, fila, col;
+        double suma;
+        
+        for(i = 0; i < block_size; i++){
+            fila = i * n;
+            for(j = 0; j < block_size; j++){
+                suma = 0;
+                col = j * n;
+                for(k = 0; k < block_size; k++){
+                    suma += a[fila + k] * b[col + k];
+                }
+                ab[fila + j] += suma;
+            }
+        }
+    }

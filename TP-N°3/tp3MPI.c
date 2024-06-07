@@ -181,7 +181,7 @@ int main(int argc, char* argv[]){
         totalTime = maxCommTimes[5] - minCommTimes[0];
 		commTime = (maxCommTimes[1] - minCommTimes[0]) + (maxCommTimes[3] - minCommTimes[2]) + (maxCommTimes[5] - minCommTimes[4]);		
 
-		printf("Multiplicacion de matrices (N=%d)\tCantidad de procesos (P=%d)\tTiempo total=%lf\tTiempo comunicacion=%lf\n",n,numProcs,totalTime,commTime);
+		printf("%lf,%lf",totalTime,commTime);
 
 	}
 

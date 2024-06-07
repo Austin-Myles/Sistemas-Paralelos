@@ -1,0 +1,4 @@
+Multiplicacion de matrices (N=512)	Cantidad de procesos (P=32)	Tiempo total=0.323115	Tiempo comunicacion=0.251291
+Multiplicacion de matrices (N=1024)	Cantidad de procesos (P=32)	Tiempo total=1.202515	Tiempo comunicacion=1.000935
+Multiplicacion de matrices (N=2048)	Cantidad de procesos (P=32)	Tiempo total=5.980269	Tiempo comunicacion=1.859015
+Multiplicacion de matrices (N=4096)	Cantidad de procesos (P=32)	Tiempo total=41.545688	Tiempo comunicacion=8.362902

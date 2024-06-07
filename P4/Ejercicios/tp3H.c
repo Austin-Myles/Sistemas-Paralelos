@@ -9,7 +9,7 @@ void matrix_blk(double *a, double *b, double *ab, int n, int block_size);
 
 int main(int argc, char* argv[]){
     
-	double commTimes[2], maxCommTimes[2], minCommTimes[2], commTime, totalTime;
+	double commTimes[6], maxCommTimes[6], minCommTimes[6], commTime, totalTime;
 	int i,j,k, numProcs, rank, n, fila, col, stripSize, provided;
     int auxi, auxj;
 	double *A,*B,*C,*D,*AxB,*CxD,*R;   
@@ -24,8 +24,8 @@ int main(int argc, char* argv[]){
 	MPI_Status status;
 
 	/* Lee par�metros de la l�nea de comando */
-	if ((argc != 4) || ((n = atoi(argv[1])) <= 0) ) {
-	    printf("\nUsar: %s size \n  size: Dimension de la matriz\nbs: Tamaño de bloque\nCantidad de hilos\n", argv[0]);
+	if ((argc != 3) || ((n = atoi(argv[1])) <= 0) ) {
+	    printf("\nUsar: %s size \n  size: Dimension de la matriz\nbs: Tamaño de bloque\n", argv[0]);
 		exit(1);
 	}
 
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]){
 	}
     
     int block_size = atoi(argv[2]);
-    int cant_hilos = atoi(argv[3]);
+    int cant_hilos = 8;
 
     //Creamos las variables locales
     double localMaxA = -1;
@@ -90,6 +90,7 @@ int main(int argc, char* argv[]){
 
 	MPI_Barrier(MPI_COMM_WORLD);
 
+    //0-1 Primera comunicación.
     commTimes[0] = MPI_Wtime();
 
 	//Distribuimos A y C en porciones para los procesos. B y D en su totalidad a todos los procesos.
@@ -98,6 +99,8 @@ int main(int argc, char* argv[]){
     MPI_Bcast(B, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     MPI_Scatter(C, stripSize * n, MPI_DOUBLE, C, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
     MPI_Bcast(D, n * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+    
+    commTimes[1] = MPI_Wtime();
 
     #pragma omp parallel private(i,j,k,auxi,auxj,fila,col) num_threads(cant_hilos) shared(A,B,C,D,AxB,CxD,R,stripSize,n,block_size)
     {
@@ -131,30 +134,22 @@ int main(int argc, char* argv[]){
             }
         }
     
-        #pragma omp barrier
-        //Hacemos las reducciones correspondientes.
-        #pragma omp master
+        //Hacemos las reducciones correspondientes y calculamos escalar.
+        #pragma omp single
         {
-            MPI_Reduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Reduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Reduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Reduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Reduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Reduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, COORDINATOR, MPI_COMM_WORLD);
-        }
-        //Punto de sincronización.
-        MPI_Barrier(MPI_COMM_WORLD);
-
-        //Calculamos el escalar.
-        #pragma omp master
-        {
+            //2-3 Segundo tiempo de comunicación.
+            commTimes[2] = MPI_Wtime();
+            MPI_Allreduce(&localMaxA, &maxA, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&localMaxB, &maxB, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&localMinA, &minA, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&localMinB, &minB, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&localPromA, &promA, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&localPromB, &promB, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            commTimes[3] = MPI_Wtime();
             promA = promA / (n*n);
             promB = promB / (n*n);    
             T1 = ((maxA * maxB - minA * minB) / (promA * promB));
         }
-
-        //Punto de sincronización.
-        MPI_Barrier(MPI_COMM_WORLD);
 
         //Hacemos las multiplicaciones de matrices por bloques A y B
         #pragma omp for schedule(static) nowait
@@ -180,51 +175,53 @@ int main(int argc, char* argv[]){
             }
         }
 
-        #pragma omp master
-        {
-            MPI_Gather(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Gather(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Scatter(AxB, stripSize * n, MPI_DOUBLE, AxB, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-            MPI_Scatter(CxD, stripSize * n, MPI_DOUBLE, CxD, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-        }
- 
-
         //Calculamos el resultado total
         #pragma omp for schedule(static)
         for (i=0; i<stripSize ; i++) {
+            auxi = i * n;
             for (j=0; j<n ;j++) {
                 R[auxi+j] += (AxB[auxi+j] * T1) + CxD[auxi+j];
             }
         }
-        
-        #pragma omp master
-        {
-            MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
-        }
     }
+
+    commTimes[4] = MPI_Wtime();
+    MPI_Gather(R, stripSize * n, MPI_DOUBLE, R, stripSize * n, MPI_DOUBLE, COORDINATOR, MPI_COMM_WORLD);
+    commTimes[5] = MPI_Wtime();
+
     //Obtenemos el tiempo total.
-    commTimes[1] = MPI_Wtime();
-	MPI_Reduce(commTimes, minCommTimes, 2, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
-	MPI_Reduce(commTimes, maxCommTimes, 2, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
+    
+	MPI_Reduce(commTimes, minCommTimes, 6, MPI_DOUBLE, MPI_MIN, COORDINATOR, MPI_COMM_WORLD);
+	MPI_Reduce(commTimes, maxCommTimes, 6, MPI_DOUBLE, MPI_MAX, COORDINATOR, MPI_COMM_WORLD);
 
 	MPI_Finalize();
 
 	if (rank == COORDINATOR) {
         //Calculamos el tiempo total que tomo el algoritmo.
-        totalTime = maxCommTimes[1] - minCommTimes[0];
-        printf("Multiplicacion de matrices (N=%d)\tCantidad de procesos (P=%d)\tTiempo total=%lf\n",n,numProcs,totalTime);
+        totalTime = maxCommTimes[5] - minCommTimes[0];
+		commTime = (maxCommTimes[1] - minCommTimes[0]) + (maxCommTimes[3] - minCommTimes[2]) + (maxCommTimes[5] - minCommTimes[4]);		
+
+		printf("Multiplicacion de matrices (N=%d)\tCantidad de procesos (P=%d)\tTiempo total=%lf\tTiempo comunicacion=%lf\n",n,numProcs,totalTime,commTime);
         
 	}
 
     //Liberamos memoria
-    free(A);
+    if (rank == COORDINATOR) {
+        free(A);
+        free(C);
+        free(R);
+        free(AxB);
+        free(CxD);
+    } else {
+        free(A);
+        free(C);
+        free(R);
+        free(AxB);
+        free(CxD);
+    }
     free(B);
-    free(C);
     free(D);
-    free(R);
-    free(AxB);
-    free(CxD);
-
+    
 	return 0;
 }
     //Procemiento encargado de realizar la multiplicacion por bloques
